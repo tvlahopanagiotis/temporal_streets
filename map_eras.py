@@ -106,8 +106,8 @@ def process_street(street: str, city_name: str) -> tuple:
         return (street, {'era': century_era, 'context': context})
     return None
 
-# def extract_street_eras_and_context_parallel_progressbar(city_name: str, country_name: str, max_workers: int = 10, limit: int = 100) -> dict:
-def extract_street_eras_and_context_parallel_progressbar(city_name: str, country_name: str, max_workers: int = 10) -> dict:
+def extract_street_eras_and_context_parallel_progressbar(city_name: str, country_name: str, max_workers: int = 10, limit: int = 100) -> dict:
+# def extract_street_eras_and_context_parallel_progressbar(city_name: str, country_name: str, max_workers: int = 10) -> dict:
     """Retrieve street names for a specified city and determine the era and context for each street using parallel processing with a progress bar."""
     graph = ox.graph_from_place(f"{city_name}, {country_name}", network_type="drive")
     street_names = []
@@ -119,7 +119,7 @@ def extract_street_eras_and_context_parallel_progressbar(city_name: str, country
                 street_names.extend(data['name'])
     
     # Limit the number of streets
-    # street_names = street_names[:limit]
+    street_names = street_names[:limit]
     street_eras = {}
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -152,13 +152,13 @@ def visualize_and_save_street_eras(street_eras: dict, city_name: str, country_na
     """Visualize the eras of streets on a map using color coding and save the result as a PNG."""
     # Define color map for different eras
     color_map = {
-        'ancient': 'red',
+        'ancient': 'pink',
         'medieval': 'orange',
         'early modern': 'green',
         'modern': 'blue',
         'contemporary': 'purple',
         '20th century': 'cyan',
-        'unknown': 'gray'
+        'unknown': 'red'
     }
     
     # Configure OSMnx to download and plot street data for the specified city
@@ -173,11 +173,11 @@ def visualize_and_save_street_eras(street_eras: dict, city_name: str, country_na
             for street in street_names:
                 if street in street_eras:
                     era = street_eras[street]['era']
-                    ec.append(color_map.get(era, 'gray'))
+                    ec.append(color_map.get(era, 'red'))
                     color_assigned = True
                     break
         if not color_assigned:
-            ec.append('gray')
+            ec.append('red')
     
     # Plot the graph with edge colors based on eras
     fig, ax = ox.plot_graph(
@@ -224,12 +224,13 @@ def save_to_geospatial_files(graph, street_eras, filename_prefix="street_eras"):
     
     return edges
 
-def create_leaflet_map(edges_gdf, filename="leaflet_map.html"):
+def create_leaflet_map_with_history(edges_gdf, street_data, filename="leaflet_map.html"):
     """
-    Create an enhanced Leaflet map using folium and save to an HTML file.
+    Create an enhanced Leaflet map using folium, with history pop-ups, and save to an HTML file.
     
     Parameters:
     - edges_gdf: the edges GeoDataFrame with street data
+    - street_data: Dictionary containing street era and context data.
     - filename: the name of the HTML file to save
     """
     # Initialize the map centered around the mean coordinates of the data
@@ -237,21 +238,29 @@ def create_leaflet_map(edges_gdf, filename="leaflet_map.html"):
                    zoom_start=14, 
                    tiles="CartoDB positron")
 
+    # Add title and description using HTML
+    title_html = '''
+                 <h3 align="center" style="font-size:20px"><b>A walk through history: Temporal streets in Oxford, UK</b></h3>
+                 <h4 align="center" style="font-size:16px">Deriving the historical context of street names using OSM & Wikipedia</h4>
+                 '''
+    m.get_root().html.add_child(folium.Element(title_html))
+    
     # Define color map for different eras
     color_map = {
-        'ancient': 'red',
+        'ancient': 'gray',
         'medieval': 'orange',
         'early modern': 'green',
         'modern': 'blue',
         'contemporary': 'purple',
-        'unknown': 'gray'
+        'unknown': 'red'
     }
 
     # Add streets to the map with enhanced styling and pop-ups
     for _, row in edges_gdf.iterrows():
-        line_color = color_map.get(row['era'], 'gray')
-        popup_content = f"Street: {row['name']}<br>Era: {row['era']}"
-        popup = folium.Popup(popup_content, max_width=300)
+        line_color = color_map.get(row['era'], 'red')
+        street_history = street_data.get(row['name'], {}).get('context', 'No historical context available.')
+        popup_content = f"Street: {row['name']}<br>Era: {row['era']}<br>History: {street_history}"
+        popup = folium.Popup(popup_content, max_width=500)
         folium.PolyLine([(x[1], x[0]) for x in list(row['geometry'].coords)], 
                         color=line_color, 
                         weight=2.5,
@@ -264,18 +273,18 @@ def create_leaflet_map(edges_gdf, filename="leaflet_map.html"):
                     background-color: white; border:2px solid grey; z-index:9999; font-size:14px;">
         &nbsp;<b>Street Eras:</b><br>
         &nbsp;Ancient: &nbsp;<i class="fa fa-minus" style="color:red"></i><br>
-        &nbsp;Medieval: &nbsp;<i class="fa fa-minus" style="color:blue"></i><br>
+        &nbsp;Medieval: &nbsp;<i class="fa fa-minus" style="color:orange"></i><br>
         &nbsp;Early Modern: &nbsp;<i class="fa fa-minus" style="color:green"></i><br>
-        &nbsp;Modern: &nbsp;<i class="fa fa-minus" style="color:yellow"></i><br>
+        &nbsp;Modern: &nbsp;<i class="fa fa-minus" style="color:blue"></i><br>
         &nbsp;Contemporary: &nbsp;<i class="fa fa-minus" style="color:purple"></i><br>
-        &nbsp;20th Century: &nbsp;<i class="fa fa-minus" style="color:cyan"></i><br>
-        &nbsp;Unknown: &nbsp;<i class="fa fa-minus" style="color:gray"></i>
+        &nbsp;Unknown: &nbsp;<i class="fa fa-minus" style="color:red"></i>
         </div>
         '''
     m.get_root().html.add_child(folium.Element(legend_html))
     
     # Save map to an HTML file
     m.save(filename)
+
 
 city = "Oxford"
 country = "United Kingdom"
@@ -285,4 +294,4 @@ save_street_eras_to_csv(street_data)
 # Usage:
 graph = ox.graph_from_place(f"{city}, {country}", network_type="drive")
 edges_gdf = save_to_geospatial_files(graph, street_data)
-create_leaflet_map(edges_gdf)
+create_leaflet_map_with_history(edges_gdf,street_data,"leaflet_map_with_history.html")
